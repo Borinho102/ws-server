@@ -1,0 +1,19 @@
+{
+  "name": "wivroo-ws-server",
+  "version": "1.0.0",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "jsonwebtoken": "^9.0.0",
+    "socket.io": "^4.7.5",
+    "ws": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.1.0",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.0.0"
+  }
+}
