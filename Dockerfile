@@ -1,17 +1,32 @@
+FROM node:20-alpine AS builder
+
+WORKDIR /ws
+
+# Copy package files
+COPY src/ws/package*.json ./
+
+# Use npm install instead of npm ci since we don't have package-lock.json
+RUN npm install
+
+# Copy source code
+COPY src/ws .
+
+# Build the application
+RUN npm run build
+
+# Production stage
 FROM node:20-alpine
 
 WORKDIR /ws
 
-# Copy only ws-specific package.json and tsconfig
+# Copy package files
 COPY src/ws/package*.json ./
 
-RUN npm install
+# Use npm install for production dependencies
+RUN npm install --omit=dev
 
-# Copy only the WebSocket server source code
-COPY src/ws .
-
-# Build only the /ws files
-RUN npm run build
+# Copy built application from builder stage
+COPY --from=builder /ws/dist ./dist
 
 EXPOSE 4000
 
