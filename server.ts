@@ -93,6 +93,17 @@ interface ChatRoom extends BaseDocument {
   unread_count_partenaire: number;
 }
 
+export enum UserType {
+  ACHETEUR = 'acheteur',
+  PARTENAIRE = 'partenaire'
+}
+
+interface ChatUser extends BaseDocument {
+  _id: ObjectId;
+  whatsapp_number: string;
+  user_type: UserType;
+}
+
 
 
 class SocketIOServer {
@@ -108,6 +119,7 @@ class SocketIOServer {
   private mongo: MongoConnection | null = null;
   private messageRepo: Repository<ChatMessage> | null = null;
   private roomRepo: Repository<ChatRoom> | null = null;
+  private userRepo: Repository<ChatUser> | null = null;
 
   constructor(port: number = 4000, corsOrigins: string[] | string | boolean = true) {
     this.port = parseInt(process.env.PORT || port.toString(), 10);
@@ -137,6 +149,7 @@ class SocketIOServer {
       if(db && client){
         this.messageRepo = new Repository<ChatMessage>('chatmessages', db, client);
         this.roomRepo = new Repository<ChatRoom>('chatrooms', db, client);
+        this.userRepo = new Repository<ChatUser>('users', db, client);
       }
       console.log('✅ MongoDB repositories initialized');
     } catch (error) {
@@ -367,7 +380,7 @@ class SocketIOServer {
       data: any
   ): Promise<ChatMessage | null> {
 
-    if (!this.messageRepo || !this.roomRepo) return null;
+    if (!this.messageRepo || !this.roomRepo || !this.userRepo) return null;
 
     try {
       const savedMessage = await this.messageRepo.create({
@@ -391,9 +404,10 @@ class SocketIOServer {
         console.log('🔄 Attempting to update room:', data.message.roomId);
 
         const roomExists = await this.roomRepo.findOne({ room_id: data.message.roomId });
+        const userData = await this.userRepo.findOne({ _id: new ObjectId(data.message.senderId) });
         console.log('🏠 Room exists check:', roomExists);
 
-        if (roomExists) {
+        if (roomExists && userData) {
 
           const updateResult = await this.roomRepo.updateOne(
               { room_id: data.message.roomId },
@@ -401,7 +415,9 @@ class SocketIOServer {
                 $set: {
                   last_message: data.message.data.message,
                   last_message_at: new Date(data.message.data.timespan),
-                  last_message_sender: new ObjectId(data.message.senderId)
+                  last_message_sender: new ObjectId(data.message.senderId),
+                  // ...(userData.user_type === 'partenaire' ?
+                  //     { unread_count_acheteur: roomExists.unread_count_acheteur + 1} : { unread_count_acheteur: roomExists.unread_count_partenaire + 1}),
                 }
               }
           );
@@ -442,24 +458,33 @@ class SocketIOServer {
       savedMessage = await this.saveMessageToMongoDB(
           data
       );
-    }
-    const plainMessage = savedMessage ? JSON.parse(JSON.stringify(savedMessage)) : undefined;
+      const plainMessage = savedMessage ? JSON.parse(JSON.stringify(savedMessage)) : undefined;
 
-    console.log("➡️ Emitting to room:", room);
-    console.log("📦 Message payload:", {
-      from: socket.id,
-      fromUsername: username,
-      room,
-      ...(plainMessage && { message: plainMessage }),
-      timestamp: new Date().toISOString()
-    });
-    this.io.to(room).emit('room_message', {
-      from: socket.id,
-      fromUsername: username,
-      room,
-      ...(plainMessage && { message: { ...plainMessage, action: "chat" }}),
-      timestamp: new Date().toISOString()
-    });
+      console.log("➡️ Emitting to room:", room);
+      console.log("📦 Message payload:", {
+        from: socket.id,
+        fromUsername: username,
+        room,
+        ...(plainMessage && { message: plainMessage }),
+        timestamp: new Date().toISOString()
+      });
+      this.io.to(room).emit('room_message', {
+        from: socket.id,
+        fromUsername: username,
+        room,
+        ...(plainMessage && { message: { ...plainMessage, action: "chat" }}),
+        timestamp: new Date().toISOString()
+      });
+    }
+    else {
+      this.io.to(room).emit('room_message', {
+        from: socket.id,
+        fromUsername: username,
+        room,
+        message,
+        timestamp: new Date().toISOString()
+      });
+    }
   }
 
   // public async getRoomStats(): Promise<any> {
